@@ -6,6 +6,10 @@ on:
   push:
     branches: [main, develop]
 
+defaults:
+  run:
+    working-directory: ./overtime-tracker
+
 jobs:
   # Fast verification job - runs first without waiting for DB setup
   verify:
@@ -13,32 +17,29 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
       
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
-          cache-dependency-path: 'overtime-tracker/package-lock.json'
+          cache-dependency-path: './overtime-tracker/package-lock.json'
       
       - name: Install dependencies
-        working-directory: ./overtime-tracker
         run: npm ci
       
       - name: Type check
-        working-directory: ./overtime-tracker
         run: npm run typecheck
       
       - name: Lint code
-        working-directory: ./overtime-tracker
         run: npm run lint
       
       - name: Run unit tests
-        working-directory: ./overtime-tracker
         run: npm run test:unit
       
       - name: Build project
-        working-directory: ./overtime-tracker
         run: npm run build
 
   # Integration tests with Postgres service
@@ -60,29 +61,27 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
       
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
-          cache-dependency-path: 'overtime-tracker/package-lock.json'
+          cache-dependency-path: './overtime-tracker/package-lock.json'
       
       - name: Install dependencies
-        working-directory: ./overtime-tracker
         run: npm ci
       
       - name: Setup test database
-        working-directory: ./overtime-tracker
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: |
           # Run database migrations
           npm run db:migrate
-          # Note: No seed script exists, but migrations should set up schema
       
       - name: Run integration tests
-        working-directory: ./overtime-tracker
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: npm run test:integration
@@ -106,29 +105,27 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          submodules: true
       
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
           cache: 'npm'
-          cache-dependency-path: 'overtime-tracker/package-lock.json'
+          cache-dependency-path: './overtime-tracker/package-lock.json'
       
       - name: Install dependencies
-        working-directory: ./overtime-tracker
         run: npm ci
       
       - name: Setup test database
-        working-directory: ./overtime-tracker
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: |
           # Run database migrations
           npm run db:migrate
-          # Note: No seed script exists, but migrations should set up schema
       
       - name: Run e2e tests
-        working-directory: ./overtime-tracker
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: npm run test:e2e
