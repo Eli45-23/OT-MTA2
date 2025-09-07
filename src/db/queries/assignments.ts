@@ -1,22 +1,28 @@
 import { eq, and, sql } from 'drizzle-orm';
 import { db } from '../connection.js';
 import { assignments, employees, overtimeEntries } from '../schema.js';
+import { mapAssignmentRow } from '../mappers.js';
 import { getPeriodBoundaries } from '../../lib/period.js';
 import type { Assignment, EmployeeSummary, Candidate } from '../../../contracts/schemas.js';
 
 export async function createAssignment(data: Omit<Assignment, 'id' | 'created_at'>): Promise<Assignment> {
-  const result = await db.insert(assignments).values(data).returning();
-  return result[0];
+  const result = await db.insert(assignments).values({
+    ...data,
+    hours_charged: data.hours_charged.toString(),
+    decided_at: data.decided_at ? new Date(data.decided_at) : null
+  }).returning();
+  return mapAssignmentRow(result[0]);
 }
 
 export async function getAssignmentsByPeriod(period: string): Promise<Assignment[]> {
-  return await db.select().from(assignments).where(eq(assignments.period_week, period));
+  const rows = await db.select().from(assignments).where(eq(assignments.period_week, period));
+  return rows.map(mapAssignmentRow);
 }
 
 export async function getAssignmentByEmployeePeriod(employeeId: string, period: string): Promise<Assignment | null> {
   const result = await db.select().from(assignments)
     .where(and(eq(assignments.employee_id, employeeId), eq(assignments.period_week, period)));
-  return result[0] || null;
+  return result[0] ? mapAssignmentRow(result[0]) : null;
 }
 
 export async function getOvertimeSummaryByPeriod(period: string): Promise<EmployeeSummary[]> {
@@ -25,9 +31,9 @@ export async function getOvertimeSummaryByPeriod(period: string): Promise<Employ
     employee_id: employees.id,
     name: employees.name,
     badge: employees.badge,
-    overtime_hours: sql<number>`COALESCE(SUM(${overtimeEntries.hours}), 0)`,
-    assignment_hours: sql<number>`COALESCE(SUM(${assignments.hours_charged}), 0)`,
-    last_assigned_at: sql<string | null>`MAX(${assignments.created_at})`
+    overtime_hours: sql<string>`COALESCE(SUM(${overtimeEntries.hours}), 0)`,
+    assignment_hours: sql<string>`COALESCE(SUM(${assignments.hours_charged}), 0)`,
+    last_assigned_at: sql<Date | null>`MAX(${assignments.created_at})`
   }).from(employees)
   .leftJoin(overtimeEntries, and(
     eq(overtimeEntries.employee_id, employees.id),
@@ -45,7 +51,7 @@ export async function getOvertimeSummaryByPeriod(period: string): Promise<Employ
     name: row.name,
     badge: row.badge,
     total_hours: Number(row.overtime_hours) + Number(row.assignment_hours),
-    last_assigned_at: row.last_assigned_at
+    last_assigned_at: row.last_assigned_at?.toISOString() || null
   }));
 }
 

@@ -1,5 +1,5 @@
 import { pgTable, uuid, text, boolean, timestamp, numeric, integer, check, unique } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 // Employees table
 export const employees = pgTable('employees', {
@@ -9,8 +9,8 @@ export const employees = pgTable('employees', {
   active: boolean('active').notNull().default(true),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
-  nameCheck: check('name_length', `length(${table.name}) > 0 AND length(${table.name}) <= 100`),
-  badgeCheck: check('badge_length', `length(${table.badge}) > 0 AND length(${table.badge}) <= 20`),
+  nameCheck: check('name_length', sql`length(${table.name}) > 0 AND length(${table.name}) <= 100`),
+  badgeCheck: check('badge_length', sql`length(${table.badge}) > 0 AND length(${table.badge}) <= 20`),
 }));
 
 // Overtime entries table
@@ -23,9 +23,9 @@ export const overtimeEntries = pgTable('overtime_entries', {
   note: text('note'),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
-  hoursCheck: check('hours_range', `${table.hours} >= 0 AND ${table.hours} <= 24`),
-  sourceCheck: check('source_enum', `${table.source} IN ('manual', 'import')`),
-  noteCheck: check('note_length', `length(${table.note}) <= 500`),
+  hoursCheck: check('hours_range', sql`${table.hours} >= 0 AND ${table.hours} <= 24`),
+  sourceCheck: check('source_enum', sql`${table.source} IN ('manual', 'import')`),
+  noteCheck: check('note_length', sql`length(${table.note}) <= 500`),
 }));
 
 // Assignments table
@@ -39,9 +39,9 @@ export const assignments = pgTable('assignments', {
   tie_break_rank: integer('tie_break_rank').notNull(),
   created_at: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
-  periodCheck: check('period_format', `${table.period_week} ~ '^\\d{4}-W\\d{2}$'`),
-  hoursChargedCheck: check('hours_charged_range', `${table.hours_charged} >= 0`),
-  statusCheck: check('status_enum', `${table.status} IN ('assigned', 'refused', 'completed')`),
+  periodCheck: check('period_format', sql`${table.period_week} ~ '^\\d{4}-W\\d{2}$'`),
+  hoursChargedCheck: check('hours_charged_range', sql`${table.hours_charged} >= 0`),
+  statusCheck: check('status_enum', sql`${table.status} IN ('assigned', 'refused', 'completed')`),
   uniqueEmployeePeriod: unique('assignments_employee_period_unique').on(table.employee_id, table.period_week),
 }));
 
@@ -50,8 +50,8 @@ export const config = pgTable('config', {
   id: integer('id').primaryKey().$default(() => 1),
   default_refusal_hours: numeric('default_refusal_hours', { precision: 5, scale: 2 }).notNull().default('8'),
 }, (table) => ({
-  idCheck: check('single_row', `${table.id} = 1`),
-  refusalHoursCheck: check('refusal_hours_range', `${table.default_refusal_hours} >= 0 AND ${table.default_refusal_hours} <= 24`),
+  idCheck: check('single_row', sql`${table.id} = 1`),
+  refusalHoursCheck: check('refusal_hours_range', sql`${table.default_refusal_hours} >= 0 AND ${table.default_refusal_hours} <= 24`),
 }));
 
 // Relations

@@ -10,7 +10,6 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
-    "rootDir": "./src",
     "declaration": true,
     "sourceMap": true,
     "experimentalDecorators": true,
@@ -20,7 +19,8 @@
     "noEmit": false
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "contracts/**/*"
   ],
   "exclude": [
     "node_modules",
