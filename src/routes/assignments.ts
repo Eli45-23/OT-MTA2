@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
+import { eq, and } from 'drizzle-orm';
 import { periodQuerySchema, assignNextSchema } from '../../contracts/schemas.js';
 import { validateQuery, validateBody } from '../lib/validation.js';
 import { orderCandidates, getNextEmployee } from '../lib/selection.js';
 import { createAssignment, getAssignmentByEmployeePeriod } from '../db/queries/assignments.js';
 import { db } from '../db/connection.js';
-import { config } from '../db/schema.js';
+import { config, assignments } from '../db/schema.js';
 
 const router = Router();
 
@@ -25,38 +26,77 @@ router.get('/who-is-next', validateQuery(periodQuerySchema), async (req: Request
 router.post('/assign-next', validateBody(assignNextSchema), async (req: Request, res: Response) => {
   try {
     const { period, hours, reason, refused = false } = req.body;
-    
-    const nextEmployee = await getNextEmployee(period);
-    if (!nextEmployee) {
-      return res.status(404).json({ error: 'Not Found', message: 'No eligible employees available' });
-    }
 
-    const existing = await getAssignmentByEmployeePeriod(nextEmployee.employee_id, period);
-    if (existing) {
-      return res.status(409).json({ error: 'Conflict', message: 'Employee already assigned for this period' });
-    }
+    // Use transaction for atomicity and race condition prevention
+    const result = await db.transaction(async (tx) => {
+      // Get candidates atomically within transaction
+      const candidates = await orderCandidates(period);
+      if (candidates.length === 0) {
+        throw new Error('NO_CANDIDATES');
+      }
 
-    let hoursToCharge = hours;
-    if (refused) {
-      const configResult = await db.select().from(config);
-      hoursToCharge = Number(configResult[0]?.default_refusal_hours || 8);
-    }
+      const nextEmployee = candidates[0];
 
-    const assignment = await createAssignment({
-      employee_id: nextEmployee.employee_id,
-      period_week: period,
-      hours_charged: hoursToCharge,
-      status: refused ? 'refused' : 'assigned',
-      decided_at: null,
-      tie_break_rank: nextEmployee.tie_break_rank
+      // Check for existing assignment with SELECT FOR UPDATE to prevent races
+      const existing = await tx.select()
+        .from(assignments)
+        .where(and(
+          eq(assignments.employee_id, nextEmployee.employee_id),
+          eq(assignments.period_week, period)
+        ))
+        .for('update');
+
+      if (existing.length > 0) {
+        throw new Error('ALREADY_ASSIGNED');
+      }
+
+      // Get default refusal hours if needed
+      let hoursToCharge = hours;
+      if (refused) {
+        const configResult = await tx.select().from(config);
+        hoursToCharge = Number(configResult[0]?.default_refusal_hours || 8);
+      }
+
+      // Create assignment atomically
+      const assignment = await tx.insert(assignments).values({
+        employee_id: nextEmployee.employee_id,
+        period_week: period,
+        hours_charged: hoursToCharge.toString(),
+        status: refused ? 'refused' : 'assigned',
+        decided_at: null,
+        tie_break_rank: nextEmployee.tie_break_rank
+      }).returning();
+
+      return assignment[0];
     });
 
-    res.status(201).json(assignment);
+    res.status(201).json(result);
+
   } catch (error: any) {
+    // Handle specific transaction errors
+    if (error.message === 'NO_CANDIDATES') {
+      return res.status(404).json({ 
+        error: 'Not Found', 
+        message: 'No eligible employees available' 
+      });
+    }
+    if (error.message === 'ALREADY_ASSIGNED') {
+      return res.status(409).json({ 
+        error: 'Conflict', 
+        message: 'Employee already assigned for this period' 
+      });
+    }
+    // Handle database constraint violations
     if (error.code === '23505') {
-      res.status(409).json({ error: 'Conflict', message: 'Employee already assigned for this period' });
+      return res.status(409).json({ 
+        error: 'Conflict', 
+        message: 'Employee already assigned for this period' 
+      });
     } else {
-      res.status(500).json({ error: 'Internal Server Error', message: 'Failed to create assignment' });
+      return res.status(500).json({ 
+        error: 'Internal Server Error', 
+        message: 'Failed to create assignment' 
+      });
     }
   }
 });
