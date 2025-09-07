@@ -6,9 +6,6 @@ on:
   push:
     branches: [main, develop]
 
-defaults:
-  run:
-    working-directory: ./overtime-tracker
 
 jobs:
   # Fast verification job - runs first without waiting for DB setup
@@ -68,14 +65,19 @@ jobs:
       
       - name: Setup test database
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+          NODE_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/overtime_tracker_test
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/overtime_tracker_test
         run: |
-          # Run database migrations
+          # Create test database and run migrations
+          PGPASSWORD=postgres createdb -h localhost -U postgres overtime_tracker_test
           npm run db:migrate
       
       - name: Run integration tests
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+          NODE_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/overtime_tracker_test
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/overtime_tracker_test
         run: npm run test:integration
 
   # E2E tests with Postgres service
@@ -108,12 +110,17 @@ jobs:
       
       - name: Setup test database
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+          NODE_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/overtime_tracker_test
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/overtime_tracker_test
         run: |
-          # Run database migrations
+          # Create test database and run migrations
+          PGPASSWORD=postgres createdb -h localhost -U postgres overtime_tracker_test
           npm run db:migrate
       
       - name: Run e2e tests
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+          NODE_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/overtime_tracker_test
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/overtime_tracker_test
         run: npm run test:e2e
