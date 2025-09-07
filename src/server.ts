@@ -8,6 +8,17 @@ const app = express();
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Content-Type validation for POST/PATCH
+app.use((req, res, next) => {
+  if ((req.method === 'POST' || req.method === 'PATCH') && req.get('Content-Type') !== 'application/json') {
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: 'Content-Type must be application/json'
+    });
+  }
+  next();
+});
+
 // Routes
 app.use('/api', routes);
 
@@ -17,6 +28,17 @@ app.use((req, res) => {
     error: 'Not Found',
     message: `Route ${req.method} ${req.path} not found`
   });
+});
+
+// JSON parse error handler
+app.use((error: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (error instanceof SyntaxError && 'body' in error) {
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: 'Invalid JSON'
+    });
+  }
+  next(error);
 });
 
 // Error handler

@@ -21,5 +21,7 @@ afterAll(async () => {
 
 // Clean database before each test
 beforeEach(async () => {
-  // TODO: Clean all tables and reset state
+  const { db } = await import('../../src/db/connection.js');
+  const { resetDb } = await import('../../src/db/testReset.js');
+  await resetDb(db);
 });

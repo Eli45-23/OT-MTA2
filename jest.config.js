@@ -13,6 +13,10 @@ export default {
   testMatch: [
     '**/tests/**/*.test.ts'
   ],
+  testPathIgnorePatterns: [
+    '/node_modules/',
+    '/overtime-tracker/'
+  ],
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',

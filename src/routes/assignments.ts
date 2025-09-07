@@ -5,6 +5,7 @@ import { periodQuerySchema, assignNextSchema } from '../../contracts/schemas.js'
 import { validateQuery, validateBody } from '../lib/validation.js';
 import { orderCandidates, getNextEmployee } from '../lib/selection.js';
 import { createAssignment, getAssignmentByEmployeePeriod } from '../db/queries/assignments.js';
+import { mapAssignmentRow } from '../db/mappers.js';
 import { db } from '../db/connection.js';
 import { config, assignments } from '../db/schema.js';
 
@@ -67,7 +68,7 @@ router.post('/assign-next', validateBody(assignNextSchema), async (req: Request,
         tie_break_rank: nextEmployee.tie_break_rank
       }).returning();
 
-      return assignment[0];
+      return mapAssignmentRow(assignment[0]);
     });
 
     res.status(201).json(result);

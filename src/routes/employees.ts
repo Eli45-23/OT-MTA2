@@ -15,6 +15,19 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+router.get('/:id', validateParams(uuidParamSchema), async (req: Request, res: Response) => {
+  try {
+    const employee = await getEmployeeById(req.params.id);
+    if (!employee) {
+      res.status(404).json({ error: 'Not Found', message: 'Employee not found' });
+    } else {
+      res.json(employee);
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Internal Server Error', message: 'Failed to fetch employee' });
+  }
+});
+
 router.post('/', validateBody(createEmployeeSchema), async (req: Request, res: Response) => {
   try {
     const employee = await createEmployee(req.body);
