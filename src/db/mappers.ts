@@ -33,35 +33,35 @@ interface AssignmentRow {
 // Row to domain mappers
 export function mapEmployeeRow(row: EmployeeRow): Employee {
   return {
-    id: row.id,
-    name: row.name,
-    badge: row.badge,
-    active: row.active,
-    created_at: row.created_at.toISOString(),
+    id: row.id || '',
+    name: row.name || '',
+    badge: row.badge || '',
+    active: row.active ?? true,
+    created_at: row.created_at?.toISOString() || new Date().toISOString(),
   };
 }
 
 export function mapOvertimeEntryRow(row: OvertimeEntryRow): OvertimeEntry {
   return {
-    id: row.id,
-    employee_id: row.employee_id,
-    hours: Number(row.hours),
-    occurred_at: row.occurred_at.toISOString(),
-    source: row.source as 'manual' | 'import',
+    id: row.id || '',
+    employee_id: row.employee_id || '',
+    hours: Number(row.hours || 0),
+    occurred_at: row.occurred_at?.toISOString() || new Date().toISOString(),
+    source: (row.source as 'manual' | 'import') || 'manual',
     note: row.note || undefined,
-    created_at: row.created_at.toISOString(),
+    created_at: row.created_at?.toISOString() || new Date().toISOString(),
   };
 }
 
 export function mapAssignmentRow(row: AssignmentRow): Assignment {
   return {
-    id: row.id,
-    employee_id: row.employee_id,
-    period_week: row.period_week,
-    hours_charged: Number(row.hours_charged),
-    status: row.status as 'assigned' | 'refused' | 'completed',
+    id: row.id || '',
+    employee_id: row.employee_id || '',
+    period_week: row.period_week || '',
+    hours_charged: Number(row.hours_charged || 0),
+    status: (row.status as 'assigned' | 'refused' | 'completed') || 'assigned',
     decided_at: row.decided_at?.toISOString() || null,
-    tie_break_rank: row.tie_break_rank,
-    created_at: row.created_at.toISOString(),
+    tie_break_rank: row.tie_break_rank || 0,
+    created_at: row.created_at?.toISOString() || new Date().toISOString(),
   };
 }

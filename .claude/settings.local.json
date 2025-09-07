@@ -16,7 +16,18 @@
       "Bash(npm test)",
       "Bash(npm run test:integration:*)",
       "Bash(npm run typecheck:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Read(//var/folders/sh/8lvj4gk16pz9fv4gcr2rdj600000gn/T/TemporaryItems/NSIRD_screencaptureui_pBocd1/**)",
+      "Read(//var/folders/sh/8lvj4gk16pz9fv4gcr2rdj600000gn/T/TemporaryItems/NSIRD_screencaptureui_ZzuFKi/**)",
+      "Read(//var/folders/sh/8lvj4gk16pz9fv4gcr2rdj600000gn/T/TemporaryItems/NSIRD_screencaptureui_NN7JaJ/**)",
+      "Bash(npx tsc:*)",
+      "Bash(npx typescript:*)",
+      "Bash(./node_modules/.bin/tsc:*)",
+      "Bash(npm run verify:*)",
+      "Bash(npm run lint)",
+      "Bash(git rm:*)"
     ],
     "deny": [],
     "ask": []

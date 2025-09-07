@@ -45,15 +45,15 @@ router.patch('/:id', validateParams(uuidParamSchema), validateBody(updateEmploye
   try {
     const employee = await updateEmployee(req.params.id, req.body);
     if (!employee) {
-      res.status(404).json({ error: 'Not Found', message: 'Employee not found' });
+      return res.status(404).json({ error: 'Not Found', message: 'Employee not found' });
     } else {
-      res.json(employee);
+      return res.json(employee);
     }
   } catch (error: any) {
     if (error.code === '23505') {
-      res.status(409).json({ error: 'Conflict', message: 'Employee badge already exists' });
+      return res.status(409).json({ error: 'Conflict', message: 'Employee badge already exists' });
     } else {
-      res.status(500).json({ error: 'Internal Server Error', message: 'Failed to update employee' });
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Failed to update employee' });
     }
   }
 });

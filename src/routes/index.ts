@@ -15,6 +15,7 @@ router.get('/health', (req, res) => {
 router.use('/employees', employeesRouter);
 router.use('/overtime-entries', overtimeEntriesRouter);
 router.use('/overtime-summary', summariesRouter);
-router.use('/', assignmentsRouter); // who-is-next and assign-next at root level
+router.use('/assignments', assignmentsRouter);
+router.use('/', assignmentsRouter); // Also mount at root for backward compatibility
 
 export default router;

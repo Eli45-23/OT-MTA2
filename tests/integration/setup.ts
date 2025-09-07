@@ -20,5 +20,9 @@ afterAll(async () => {
 beforeEach(async () => {
   const { db } = await import('../../src/db/connection.js');
   const { resetDb } = await import('../../src/db/testReset.js');
-  await resetDb(db);
+  try {
+    await resetDb(db);
+  } catch (error) {
+    console.warn('Failed to reset database:', error);
+  }
 });

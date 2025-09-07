@@ -241,9 +241,9 @@ describe('Complete E2E Workflow Tests', () => {
       }).expect(201);
 
       // Verify both assignments exist
-      const assignments = await db.select().from(assignments);
-      expect(assignments).toHaveLength(2);
-      expect(assignments.map(a => a.period_week).sort()).toEqual(['2024-W01', '2024-W02']);
+      const dbAssignments = await db.select().from(assignments);
+      expect(dbAssignments).toHaveLength(2);
+      expect(dbAssignments.map(a => a.period_week).sort()).toEqual(['2024-W01', '2024-W02']);
     });
 
     it('should handle workflow with employee deactivation', async () => {
