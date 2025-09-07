@@ -37,3 +37,6 @@ temp/
 # Database
 *.db
 *.sqlite
+
+# Duplicate project directory (not part of main project)
+overtime-tracker/
