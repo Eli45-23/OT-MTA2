@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, boolean, timestamp, numeric, integer, check } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, boolean, timestamp, numeric, integer, check, unique } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 // Employees table
@@ -42,6 +42,7 @@ export const assignments = pgTable('assignments', {
   periodCheck: check('period_format', `${table.period_week} ~ '^\\d{4}-W\\d{2}$'`),
   hoursChargedCheck: check('hours_charged_range', `${table.hours_charged} >= 0`),
   statusCheck: check('status_enum', `${table.status} IN ('assigned', 'refused', 'completed')`),
+  uniqueEmployeePeriod: unique('assignments_employee_period_unique').on(table.employee_id, table.period_week),
 }));
 
 // Configuration table

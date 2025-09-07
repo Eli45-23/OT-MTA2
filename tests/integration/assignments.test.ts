@@ -1,40 +1,391 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
+import supertest from 'supertest';
+import app from '../../src/server.js';
+import { db, client } from '../../src/db/connection.js';
+import { employees, overtimeEntries, assignments, config } from '../../src/db/schema.js';
 import './setup.js';
 
+const request = supertest(app);
+
 describe('Assignment Logic Integration Tests', () => {
+  let testEmployees: any[] = [];
+
+  beforeAll(async () => {
+    // Clean all tables
+    await db.delete(assignments);
+    await db.delete(overtimeEntries);
+    await db.delete(employees);
+
+    // Set up test configuration
+    await db.insert(config).values({ id: 1, default_refusal_hours: 8 }).onConflictDoUpdate({
+      target: config.id,
+      set: { default_refusal_hours: 8 }
+    });
+  });
+
+  afterAll(async () => {
+    await db.delete(assignments);
+    await db.delete(overtimeEntries);
+    await db.delete(employees);
+    await client.end();
+  });
+
+  beforeEach(async () => {
+    // Clean data before each test
+    await db.delete(assignments);
+    await db.delete(overtimeEntries);
+    await db.delete(employees);
+
+    // Create test employees with predictable UUIDs for tie-breaking tests
+    const employeeData = [
+      { name: 'Alice Smith', badge: 'AS001' }, // Will get lowest UUID
+      { name: 'Bob Johnson', badge: 'BJ002' },
+      { name: 'Charlie Brown', badge: 'CB003' } // Will get highest UUID
+    ];
+
+    testEmployees = [];
+    for (const emp of employeeData) {
+      const response = await request.post('/api/employees').send(emp);
+      testEmployees.push(response.body);
+    }
+
+    // Sort by UUID for predictable ordering
+    testEmployees.sort((a, b) => a.id.localeCompare(b.id));
+  });
+
   describe('Assignment ordering', () => {
     it('should assign to employee with lowest total hours', async () => {
-      // TODO: Implement test
-      expect(true).toBe(true);
+      // Set up different overtime hours
+      await request.post('/api/overtime-entries').send({
+        employee_id: testEmployees[0].id, // Alice
+        hours: 4,
+        occurred_at: '2024-01-01T08:00:00Z'
+      });
+
+      await request.post('/api/overtime-entries').send({
+        employee_id: testEmployees[1].id, // Bob
+        hours: 2, // Lowest hours
+        occurred_at: '2024-01-02T08:00:00Z'
+      });
+
+      await request.post('/api/overtime-entries').send({
+        employee_id: testEmployees[2].id, // Charlie
+        hours: 6,
+        occurred_at: '2024-01-03T08:00:00Z'
+      });
+
+      // Get who is next - should be Bob with 2 hours
+      const whoIsNextResponse = await request
+        .get('/api/who-is-next?period=2024-W01')
+        .expect(200);
+
+      expect(whoIsNextResponse.body.candidates[0]).toMatchObject({
+        employee_id: testEmployees[1].id, // Bob
+        name: 'Bob Johnson',
+        total_hours: 2,
+        tie_break_rank: 1
+      });
+
+      // Assign next - should assign to Bob
+      const assignResponse = await request
+        .post('/api/assign-next')
+        .send({
+          period: '2024-W01',
+          hours: 8,
+          reason: 'coverage needed'
+        })
+        .expect(201);
+
+      expect(assignResponse.body).toMatchObject({
+        employee_id: testEmployees[1].id, // Bob
+        period_week: '2024-W01',
+        hours_charged: 8,
+        status: 'assigned',
+        tie_break_rank: 1
+      });
     });
 
     it('should handle tie-breaking by last assigned date', async () => {
-      // TODO: Implement test
-      expect(true).toBe(true);
+      // Both employees have same overtime hours
+      await request.post('/api/overtime-entries').send({
+        employee_id: testEmployees[0].id, // Alice
+        hours: 4,
+        occurred_at: '2024-01-01T08:00:00Z'
+      });
+
+      await request.post('/api/overtime-entries').send({
+        employee_id: testEmployees[1].id, // Bob
+        hours: 4, // Same hours as Alice
+        occurred_at: '2024-01-02T08:00:00Z'
+      });
+
+      // Alice was assigned more recently than Bob
+      await request.post('/api/assign-next').send({
+        period: '2023-W52', // Previous period
+        hours: 8,
+        reason: 'previous assignment'
+      });
+
+      // Verify Alice got the previous assignment
+      const prevAssignment = await db.select().from(assignments);
+      expect(prevAssignment).toHaveLength(1);
+
+      // Now for current period, Bob should be next (Alice assigned more recently)
+      const whoIsNextResponse = await request
+        .get('/api/who-is-next?period=2024-W01')
+        .expect(200);
+
+      const candidates = whoIsNextResponse.body.candidates;
+      expect(candidates[0]).toMatchObject({
+        employee_id: testEmployees[1].id, // Bob (not recently assigned)
+        total_hours: 4,
+        tie_break_rank: 1
+      });
     });
 
-    it('should handle tie-breaking by employee_id', async () => {
-      // TODO: Implement test
-      expect(true).toBe(true);
+    it('should handle tie-breaking by employee_id when all else equal', async () => {
+      // All employees have same hours and no assignments
+      for (const emp of testEmployees) {
+        await request.post('/api/overtime-entries').send({
+          employee_id: emp.id,
+          hours: 4, // Same hours for all
+          occurred_at: '2024-01-01T08:00:00Z'
+        });
+      }
+
+      const whoIsNextResponse = await request
+        .get('/api/who-is-next?period=2024-W01')
+        .expect(200);
+
+      const candidates = whoIsNextResponse.body.candidates;
+      
+      // Should be ordered by employee_id (UUID) ascending
+      expect(candidates[0].tie_break_rank).toBe(1);
+      expect(candidates[1].tie_break_rank).toBe(2);
+      expect(candidates[2].tie_break_rank).toBe(3);
+
+      // First candidate should have lowest UUID
+      expect(candidates[0].employee_id).toBe(testEmployees[0].id);
+    });
+
+    it('should correctly calculate overtime summary including assignments', async () => {
+      // Add overtime entries
+      await request.post('/api/overtime-entries').send({
+        employee_id: testEmployees[0].id,
+        hours: 4,
+        occurred_at: '2024-01-01T08:00:00Z'
+      });
+
+      // Add assignment (should count toward total)
+      await request.post('/api/assign-next').send({
+        period: '2024-W01',
+        hours: 8,
+        reason: 'test assignment'
+      });
+
+      const summaryResponse = await request
+        .get('/api/overtime-summary?period=2024-W01')
+        .expect(200);
+
+      const assignedEmployee = summaryResponse.body.employee_summaries
+        .find((emp: any) => emp.employee_id === testEmployees[0].id);
+
+      expect(assignedEmployee).toMatchObject({
+        total_hours: 12, // 4 overtime + 8 assignment
+        last_assigned_at: expect.any(String)
+      });
     });
   });
 
   describe('Refusal handling', () => {
     it('should charge default hours on refusal', async () => {
-      // TODO: Implement test
-      expect(true).toBe(true);
+      // Employee with lowest hours should be selected
+      await request.post('/api/overtime-entries').send({
+        employee_id: testEmployees[1].id, // Bob
+        hours: 2,
+        occurred_at: '2024-01-01T08:00:00Z'
+      });
+
+      // Assign but mark as refused
+      const assignResponse = await request
+        .post('/api/assign-next')
+        .send({
+          period: '2024-W01',
+          hours: 8,
+          reason: 'coverage needed',
+          refused: true
+        })
+        .expect(201);
+
+      expect(assignResponse.body).toMatchObject({
+        employee_id: testEmployees[1].id, // Bob (lowest hours)
+        status: 'refused',
+        hours_charged: 8 // Default refusal hours
+      });
+
+      // Check overtime summary reflects the charged hours
+      const summaryResponse = await request
+        .get('/api/overtime-summary?period=2024-W01')
+        .expect(200);
+
+      const refusedEmployee = summaryResponse.body.employee_summaries
+        .find((emp: any) => emp.employee_id === testEmployees[1].id);
+
+      expect(refusedEmployee.total_hours).toBe(10); // 2 overtime + 8 refusal
     });
 
-    it('should still affect next assignment ordering', async () => {
-      // TODO: Implement test
-      expect(true).toBe(true);
+    it('should still affect next assignment ordering after refusal', async () => {
+      // All employees start with same hours
+      for (const emp of testEmployees) {
+        await request.post('/api/overtime-entries').send({
+          employee_id: emp.id,
+          hours: 4,
+          occurred_at: '2024-01-01T08:00:00Z'
+        });
+      }
+
+      // First assignment (refused) - should go to first employee by UUID
+      await request.post('/api/assign-next').send({
+        period: '2024-W01',
+        hours: 8,
+        reason: 'first assignment',
+        refused: true
+      });
+
+      // Check who is next now - should NOT be the employee who just refused
+      const whoIsNextResponse = await request
+        .get('/api/who-is-next?period=2024-W01')
+        .expect(200);
+
+      const nextCandidate = whoIsNextResponse.body.candidates[0];
+      expect(nextCandidate.employee_id).not.toBe(testEmployees[0].id);
+      expect(nextCandidate.total_hours).toBe(4); // Still has lowest total
+
+      // The refused employee should be last (highest total hours now)
+      const refusedCandidate = whoIsNextResponse.body.candidates
+        .find((c: any) => c.employee_id === testEmployees[0].id);
+      expect(refusedCandidate.total_hours).toBe(12); // 4 + 8 refusal hours
+    });
+
+    it('should handle custom refusal hours', async () => {
+      // Update config for custom refusal hours
+      await db.insert(config).values({ id: 1, default_refusal_hours: 12 }).onConflictDoUpdate({
+        target: config.id,
+        set: { default_refusal_hours: 12 }
+      });
+
+      const assignResponse = await request
+        .post('/api/assign-next')
+        .send({
+          period: '2024-W01',
+          hours: 6, // Different from refusal hours
+          reason: 'custom test',
+          refused: true
+        })
+        .expect(201);
+
+      expect(assignResponse.body.hours_charged).toBe(12); // Uses config default, not request hours
     });
   });
 
-  describe('Concurrency', () => {
-    it('should prevent double assignment with 409', async () => {
-      // TODO: Implement test
-      expect(true).toBe(true);
+  describe('Period validation', () => {
+    it('should validate period format in all endpoints', async () => {
+      const invalidPeriods = ['2024-1', '24-W01', '2024-W', '2024-W54'];
+
+      for (const period of invalidPeriods) {
+        await request
+          .get(`/api/who-is-next?period=${period}`)
+          .expect(400);
+
+        await request
+          .get(`/api/overtime-summary?period=${period}`)
+          .expect(400);
+
+        await request
+          .post('/api/assign-next')
+          .send({ period, hours: 8, reason: 'test' })
+          .expect(400);
+      }
+    });
+
+    it('should handle valid period formats', async () => {
+      const validPeriods = ['2024-W01', '2024-W52', '2023-W53'];
+
+      for (const period of validPeriods) {
+        await request
+          .get(`/api/who-is-next?period=${period}`)
+          .expect(200);
+
+        await request
+          .get(`/api/overtime-summary?period=${period}`)
+          .expect(200);
+      }
+    });
+  });
+
+  describe('Edge cases', () => {
+    it('should handle no eligible employees', async () => {
+      // Delete all employees
+      await db.delete(employees);
+
+      const whoIsNextResponse = await request
+        .get('/api/who-is-next?period=2024-W01')
+        .expect(200);
+
+      expect(whoIsNextResponse.body.candidates).toEqual([]);
+
+      const assignResponse = await request
+        .post('/api/assign-next')
+        .send({
+          period: '2024-W01',
+          hours: 8,
+          reason: 'no one available'
+        })
+        .expect(404);
+
+      expect(assignResponse.body.message).toContain('No eligible employees');
+    });
+
+    it('should handle employees with no overtime entries', async () => {
+      // No overtime entries, just employees
+      const whoIsNextResponse = await request
+        .get('/api/who-is-next?period=2024-W01')
+        .expect(200);
+
+      // All employees should have 0 hours
+      whoIsNextResponse.body.candidates.forEach((candidate: any) => {
+        expect(candidate.total_hours).toBe(0);
+        expect(candidate.last_assigned_at).toBeNull();
+      });
+
+      // Should assign to first by UUID
+      const assignResponse = await request
+        .post('/api/assign-next')
+        .send({
+          period: '2024-W01',
+          hours: 8,
+          reason: 'first assignment'
+        })
+        .expect(201);
+
+      expect(assignResponse.body.employee_id).toBe(testEmployees[0].id);
+    });
+
+    it('should handle inactive employees', async () => {
+      // Deactivate one employee
+      await request
+        .patch(`/api/employees/${testEmployees[0].id}`)
+        .send({ active: false });
+
+      const whoIsNextResponse = await request
+        .get('/api/who-is-next?period=2024-W01')
+        .expect(200);
+
+      // Should only include active employees
+      expect(whoIsNextResponse.body.candidates).toHaveLength(2);
+      whoIsNextResponse.body.candidates.forEach((candidate: any) => {
+        expect(candidate.employee_id).not.toBe(testEmployees[0].id);
+      });
     });
   });
 });

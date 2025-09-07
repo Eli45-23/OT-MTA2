@@ -1,23 +1,58 @@
+import { eq, and, sql } from 'drizzle-orm';
 import { db } from '../connection.js';
-import { assignments } from '../schema.js';
+import { assignments, employees, overtimeEntries } from '../schema.js';
+import { getPeriodBoundaries } from '../../lib/period.js';
 import type { Assignment, EmployeeSummary, Candidate } from '../../../contracts/schemas.js';
 
 export async function createAssignment(data: Omit<Assignment, 'id' | 'created_at'>): Promise<Assignment> {
-  throw new Error('Not implemented');
+  const result = await db.insert(assignments).values(data).returning();
+  return result[0];
 }
 
 export async function getAssignmentsByPeriod(period: string): Promise<Assignment[]> {
-  throw new Error('Not implemented');
+  return await db.select().from(assignments).where(eq(assignments.period_week, period));
 }
 
 export async function getAssignmentByEmployeePeriod(employeeId: string, period: string): Promise<Assignment | null> {
-  throw new Error('Not implemented');
+  const result = await db.select().from(assignments)
+    .where(and(eq(assignments.employee_id, employeeId), eq(assignments.period_week, period)));
+  return result[0] || null;
 }
 
 export async function getOvertimeSummaryByPeriod(period: string): Promise<EmployeeSummary[]> {
-  throw new Error('Not implemented');
+  const { start, end } = getPeriodBoundaries(period);
+  const result = await db.select({
+    employee_id: employees.id,
+    name: employees.name,
+    badge: employees.badge,
+    overtime_hours: sql<number>`COALESCE(SUM(${overtimeEntries.hours}), 0)`,
+    assignment_hours: sql<number>`COALESCE(SUM(${assignments.hours_charged}), 0)`,
+    last_assigned_at: sql<string | null>`MAX(${assignments.created_at})`
+  }).from(employees)
+  .leftJoin(overtimeEntries, and(
+    eq(overtimeEntries.employee_id, employees.id),
+    sql`${overtimeEntries.occurred_at} >= ${start} AND ${overtimeEntries.occurred_at} <= ${end}`
+  ))
+  .leftJoin(assignments, and(
+    eq(assignments.employee_id, employees.id),
+    eq(assignments.period_week, period)
+  ))
+  .where(eq(employees.active, true))
+  .groupBy(employees.id, employees.name, employees.badge);
+
+  return result.map(row => ({
+    employee_id: row.employee_id,
+    name: row.name,
+    badge: row.badge,
+    total_hours: Number(row.overtime_hours) + Number(row.assignment_hours),
+    last_assigned_at: row.last_assigned_at
+  }));
 }
 
 export async function getCandidatesByPeriod(period: string): Promise<Candidate[]> {
-  throw new Error('Not implemented');
+  const summaries = await getOvertimeSummaryByPeriod(period);
+  return summaries.map(summary => ({
+    ...summary,
+    tie_break_rank: 0
+  }));
 }
