@@ -30,11 +30,14 @@ export function getPeriodBoundaries(periodWeek: string): { start: Date; end: Dat
   
   // Create start and end dates in ET timezone
   const startET = new Date(targetSunday.getFullYear(), targetSunday.getMonth(), targetSunday.getDate(), 0, 0, 0, 0);
-  const endET = new Date(targetSunday.getFullYear(), targetSunday.getMonth(), targetSunday.getDate() + 6, 23, 59, 59, 0);
+  const endET = new Date(targetSunday.getFullYear(), targetSunday.getMonth(), targetSunday.getDate() + 6, 23, 59, 59, 999);
+  
+  const startUTC = zonedTimeToUtc(startET, TIMEZONE);
+  const endUTC = zonedTimeToUtc(endET, TIMEZONE);
   
   return {
-    start: zonedTimeToUtc(startET, TIMEZONE),
-    end: zonedTimeToUtc(endET, TIMEZONE)
+    start: startUTC,
+    end: endUTC
   };
 }
 
