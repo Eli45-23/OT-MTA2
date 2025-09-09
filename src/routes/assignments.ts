@@ -62,17 +62,7 @@ router.post('/assign-next', validateBody(assignNextSchema), async (req: Request,
 
       const nextEmployee = candidates[0];
 
-      // Check for ANY existing assignment for this period (prevent multiple assignments per period)
-      const existingForPeriod = await tx.select()
-        .from(assignments)
-        .where(eq(assignments.period_week, period))
-        .limit(1);
-
-      if (existingForPeriod.length > 0) {
-        throw new Error('ALREADY_ASSIGNED');
-      }
-
-      // Also check specifically for this employee (redundant but defensive)
+      // Check for existing assignment for this specific employee in this period
       const existingForEmployee = await tx.select()
         .from(assignments)
         .where(and(

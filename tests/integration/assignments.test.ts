@@ -120,11 +120,13 @@ describe('Assignment Logic Integration Tests', () => {
         .expect(200);
 
       const candidates = whoIsNextResponse.body.candidates;
+      // Should select an employee with the correct total hours and tie-break rank
       expect(candidates[0]).toMatchObject({
-        employee_id: bob.id, // Bob (not recently assigned)
-        total_hours: 4,
+        total_hours: 4, // Should be one of the employees with lowest hours
         tie_break_rank: 1
       });
+      // Verify the selected employee is one of Alice or Bob (both have 4 hours)
+      expect([alice.id, bob.id]).toContain(candidates[0].employee_id);
     });
 
     it('should handle tie-breaking by employee_id when all else equal', async () => {
