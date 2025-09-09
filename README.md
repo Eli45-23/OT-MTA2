@@ -13,6 +13,7 @@ This application helps track employee overtime hours and automatically assigns o
 - Fair assignment algorithm based on least recent overtime
 - RESTful API with comprehensive validation
 - PostgreSQL database with Drizzle ORM
+- Modern React frontend with Next.js operator UI
 - Comprehensive test coverage (unit, integration, e2e)
 
 ## Development
@@ -39,9 +40,21 @@ This application helps track employee overtime hours and automatically assigns o
    npm run db:migrate
    ```
 6. Seed sample data: `npm run db:seed`
-7. Start development server: `npm run dev`
+7. Start development servers:
+   - API server: `npm run dev`
+   - Web UI: `npm run web:dev`
 
-The app will be available at http://localhost:3000
+The API will be available at http://localhost:3000
+The Web UI will be available at http://localhost:3001
+
+## Web UI
+
+The modern React-based operator interface includes:
+- **Who's Next Dashboard** (/) - View candidates and assign overtime with period selector
+- **Period Summary** (/summary) - Employee overtime totals and assignment history
+- **Employee Management** (/employees) - Add, edit, and manage employee records
+
+Built with Next.js 15, TypeScript, Tailwind CSS, shadcn/ui, and TanStack Query.
 
 #### Quick Commands
 - `npm run db:up` - Start PostgreSQL container

@@ -1,8 +1,15 @@
 import express from 'express';
+import cors from 'cors';
 import { config } from './config.js';
 import routes from './routes/index.js';
 
 const app = express();
+
+// CORS middleware - allow requests from Next.js frontend
+app.use(cors({
+  origin: ['http://localhost:3001', 'http://localhost:3000'],
+  credentials: true
+}));
 
 // Middleware
 app.use(express.json({ limit: '10mb' }));
