@@ -51,7 +51,7 @@ router.post('/assign-next', validateBody(assignNextSchema), async (req: Request,
     // Use transaction with advisory locking for stronger race condition prevention
     const result = await db.transaction(async (tx) => {
       // Use advisory lock for the period to prevent concurrent assignments
-      const lockId = period.split('-').map(p => p.charCodeAt(0)).reduce((a, b) => a + b, 0);
+      const lockId = period.split('-').map((p: string) => p.charCodeAt(0)).reduce((a: number, b: number) => a + b, 0);
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockId})`);
       
       // Get candidates atomically within transaction
