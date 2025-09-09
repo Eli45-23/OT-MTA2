@@ -3,8 +3,8 @@ import 'dotenv/config';
 export const config = {
   // Database
   database: {
-    url: process.env.DATABASE_URL || 'postgres://overtime_user:overtime_pass@localhost:5432/overtime_tracker',
-    testUrl: process.env.TEST_DATABASE_URL || 'postgres://overtime_test:overtime_test_pass@localhost:5433/overtime_tracker_test',
+    url: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/ot_mta2',
+    testUrl: process.env.TEST_DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/ot_mta2_test',
   },
   
   // Server

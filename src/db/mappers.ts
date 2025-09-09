@@ -32,8 +32,11 @@ interface AssignmentRow {
 
 // Row to domain mappers
 export function mapEmployeeRow(row: EmployeeRow): Employee {
+  if (!row || !row.id) {
+    throw new Error('Invalid employee row: missing required fields');
+  }
   return {
-    id: row.id || '',
+    id: row.id,
     name: row.name || '',
     badge: row.badge || '',
     active: row.active ?? true,
@@ -54,9 +57,12 @@ export function mapOvertimeEntryRow(row: OvertimeEntryRow): OvertimeEntry {
 }
 
 export function mapAssignmentRow(row: AssignmentRow): Assignment {
+  if (!row || !row.id || !row.employee_id) {
+    throw new Error('Invalid assignment row: missing required fields');
+  }
   return {
-    id: row.id || '',
-    employee_id: row.employee_id || '',
+    id: row.id,
+    employee_id: row.employee_id,
     period_week: row.period_week || '',
     hours_charged: Number(row.hours_charged || 0),
     status: (row.status as 'assigned' | 'refused' | 'completed') || 'assigned',

@@ -1,8 +1,8 @@
 import type { Candidate } from '../../contracts/schemas.js';
 import { getCandidatesByPeriod } from '../db/queries/assignments.js';
 
-export async function orderCandidates(period: string): Promise<Candidate[]> {
-  const candidates = await getCandidatesByPeriod(period);
+export async function orderCandidates(period: string, tx?: any): Promise<Candidate[]> {
+  const candidates = await getCandidatesByPeriod(period, tx);
   return candidates.sort((a, b) => {
     if (a.total_hours !== b.total_hours) return a.total_hours - b.total_hours;
     if (a.last_assigned_at !== b.last_assigned_at) {

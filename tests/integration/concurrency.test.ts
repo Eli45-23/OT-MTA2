@@ -5,47 +5,34 @@ import app from '../../src/server.js';
 import { db, client } from '../../src/db/connection.js';
 import { employees, overtimeEntries, assignments } from '../../src/db/schema.js';
 import './setup.js';
+import { createTestEmployeeData, findEmployeeByName, sortEmployeesByName } from '../utils/testHelpers.js';
 
 const request = supertest(app);
 
 describe('Assignment Concurrency Tests', () => {
   let testEmployees: any[] = [];
 
-  beforeAll(async () => {
-    // Clean all tables
-    await db.delete(assignments);
-    await db.delete(overtimeEntries);
-    await db.delete(employees);
-  });
+  // Helper function to safely sort employees by ID
+  const sortEmployees = (employees: any[]) => {
+    return employees.filter(emp => emp && emp.id).sort((a, b) => a.id.localeCompare(b.id));
+  };
 
-  afterAll(async () => {
-    await db.delete(assignments);
-    await db.delete(overtimeEntries);
-    await db.delete(employees);
-    await client.end();
-  });
+  // Note: Database cleanup handled by global test setup
 
   beforeEach(async () => {
-    // Clean data before each test
-    await db.delete(assignments);
-    await db.delete(overtimeEntries);
-    await db.delete(employees);
-
-    // Create test employees
-    const employeeData = [
-      { name: 'Alice Smith', badge: 'AS001' },
-      { name: 'Bob Johnson', badge: 'BJ002' },
-      { name: 'Charlie Brown', badge: 'CB003' }
-    ];
+    // Create test employees with unique badges to avoid conflicts
+    const employeeData = createTestEmployeeData('concurrency');
 
     testEmployees = [];
     for (const emp of employeeData) {
-      const response = await request.post('/api/employees').send(emp);
-      testEmployees.push(response.body);
+      const response = await request.post('/api/employees').send(emp).expect(201);
+      if (response.body && response.body.id) {
+        testEmployees.push(response.body);
+      }
     }
 
-    // Sort by UUID for predictable ordering
-    testEmployees.sort((a, b) => a.id.localeCompare(b.id));
+    // Sort by name for predictable ordering
+    testEmployees = sortEmployeesByName(testEmployees);
 
     // Give all employees same starting hours
     for (const emp of testEmployees) {
@@ -53,7 +40,7 @@ describe('Assignment Concurrency Tests', () => {
         employee_id: emp.id,
         hours: 4,
         occurred_at: '2024-01-01T08:00:00Z'
-      });
+      }).expect(201);
     }
   });
 
@@ -259,9 +246,10 @@ describe('Assignment Concurrency Tests', () => {
       const period = '2024-W01';
       
       // Set up scenario where employee selection could change during assignment
-      // Employee with slightly different hours to make selection non-obvious
+      // Alice with slightly different hours to make selection non-obvious
+      const alice = findEmployeeByName(testEmployees, 'Alice Smith');
       await request.post('/api/overtime-entries').send({
-        employee_id: testEmployees[0].id,
+        employee_id: alice.id,
         hours: 0.5, // Slightly less than others
         occurred_at: '2024-01-02T08:00:00Z'
       });
@@ -278,9 +266,10 @@ describe('Assignment Concurrency Tests', () => {
       const responses = await Promise.allSettled(assignmentPromises);
       const successful = responses.filter(r => r.status === 'fulfilled' && r.value.status === 201);
 
-      // First assignment should go to employee with lowest hours
+      // First assignment should go to Alice with lowest hours
       if (successful.length > 0) {
-        expect(successful[0].value.body.employee_id).toBe(testEmployees[0].id);
+        const alice = findEmployeeByName(testEmployees, 'Alice Smith');
+        expect(successful[0].value.body.employee_id).toBe(alice.id);
       }
 
       // Verify database state is consistent

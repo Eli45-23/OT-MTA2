@@ -1,28 +1,29 @@
 // Integration test setup
 import { beforeAll, afterAll, beforeEach } from '@jest/globals';
+import { resetTestDatabase } from '../utils/testHelpers.js';
 
-// Test database connection string
-const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL || 
-  'postgres://overtime_test:overtime_test_pass@localhost:5433/overtime_tracker_test';
-
-// Setup test database
+// Setup test database connection
 beforeAll(async () => {
-  // TODO: Initialize test database connection
-  process.env.DATABASE_URL = TEST_DATABASE_URL;
+  // Set test environment
+  process.env.NODE_ENV = 'test';
+  
+  // Use TEST_DATABASE_URL if available
+  if (process.env.TEST_DATABASE_URL) {
+    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+  }
+});
+
+// Reset database before each test with proper sequencing
+beforeEach(async () => {
+  await resetTestDatabase();
 });
 
 // Cleanup after tests
 afterAll(async () => {
-  // TODO: Close database connections
-});
-
-// Clean database before each test
-beforeEach(async () => {
-  const { db } = await import('../../src/db/connection.js');
-  const { resetDb } = await import('../../src/db/testReset.js');
   try {
-    await resetDb(db);
+    const { client } = await import('../../src/db/connection.js');
+    await client.end();
   } catch (error) {
-    console.warn('Failed to reset database:', error);
+    // Ignore connection closing errors
   }
 });

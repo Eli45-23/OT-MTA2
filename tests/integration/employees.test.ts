@@ -4,31 +4,22 @@ import app from '../../src/server.js';
 import { db, client } from '../../src/db/connection.js';
 import { employees } from '../../src/db/schema.js';
 import './setup.js';
+import { createTestBadge } from '../utils/testHelpers.js';
 
 const request = supertest(app);
 
 describe('Employee CRUD Integration Tests', () => {
-  beforeAll(async () => {
-    // Ensure clean database state
-    await db.delete(employees);
-  });
+  // Note: Database setup handled by global test setup
 
-  afterAll(async () => {
-    // Clean up after tests
-    await db.delete(employees);
-    await client.end();
-  });
+  // Note: Database cleanup handled by global test setup
 
-  beforeEach(async () => {
-    // Clean slate before each test
-    await db.delete(employees);
-  });
+  // Note: Database reset handled by global test setup
 
   describe('POST /api/employees', () => {
     it('should create employee with valid data', async () => {
       const newEmployee = {
         name: 'John Doe',
-        badge: 'JD001',
+        badge: createTestBadge('JD001', 'create-employee'),
         active: true
       };
 
@@ -40,7 +31,7 @@ describe('Employee CRUD Integration Tests', () => {
       expect(response.body).toMatchObject({
         id: expect.any(String),
         name: 'John Doe',
-        badge: 'JD001',
+        badge: expect.stringContaining('JD001'),
         active: true,
         created_at: expect.any(String)
       });
@@ -54,7 +45,7 @@ describe('Employee CRUD Integration Tests', () => {
     it('should create employee with minimal data (defaults)', async () => {
       const newEmployee = {
         name: 'Jane Smith',
-        badge: 'JS002'
+        badge: createTestBadge('JS002', 'minimal-data')
         // active should default to true
       };
 
@@ -109,9 +100,10 @@ describe('Employee CRUD Integration Tests', () => {
 
     it('should return 409 for duplicate badge', async () => {
       // Create first employee
+      const duplicateBadge = createTestBadge('DUPLICATE', 'badge-conflict');
       const employee1 = {
         name: 'John Doe',
-        badge: 'DUPLICATE'
+        badge: duplicateBadge
       };
 
       await request
@@ -122,7 +114,7 @@ describe('Employee CRUD Integration Tests', () => {
       // Try to create second employee with same badge
       const employee2 = {
         name: 'Jane Smith',
-        badge: 'DUPLICATE' // Same badge
+        badge: duplicateBadge // Same badge
       };
 
       const response = await request
@@ -143,7 +135,7 @@ describe('Employee CRUD Integration Tests', () => {
     it('should handle database constraint violations gracefully', async () => {
       const invalidEmployee = {
         name: 'A'.repeat(101), // Exceeds database constraint
-        badge: 'TEST'
+        badge: createTestBadge('TEST', 'constraint-violation')
       };
 
       const response = await request
@@ -159,9 +151,9 @@ describe('Employee CRUD Integration Tests', () => {
     it('should list all employees', async () => {
       // Create test employees
       const testEmployees = [
-        { name: 'Alice Smith', badge: 'AS001', active: true },
-        { name: 'Bob Johnson', badge: 'BJ002', active: true },
-        { name: 'Charlie Brown', badge: 'CB003', active: false }
+        { name: 'Alice Smith', badge: createTestBadge('AS001', 'list-employees'), active: true },
+        { name: 'Bob Johnson', badge: createTestBadge('BJ002', 'list-employees'), active: true },
+        { name: 'Charlie Brown', badge: createTestBadge('CB003', 'list-employees'), active: false }
       ];
 
       for (const emp of testEmployees) {
@@ -175,9 +167,9 @@ describe('Employee CRUD Integration Tests', () => {
       expect(response.body).toHaveLength(3);
       expect(response.body).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ name: 'Alice Smith', badge: 'AS001' }),
-          expect.objectContaining({ name: 'Bob Johnson', badge: 'BJ002' }),
-          expect.objectContaining({ name: 'Charlie Brown', badge: 'CB003' })
+          expect.objectContaining({ name: 'Alice Smith', badge: expect.stringContaining('AS001') }),
+          expect.objectContaining({ name: 'Bob Johnson', badge: expect.stringContaining('BJ002') }),
+          expect.objectContaining({ name: 'Charlie Brown', badge: expect.stringContaining('CB003') })
         ])
       );
     });
@@ -193,7 +185,7 @@ describe('Employee CRUD Integration Tests', () => {
     it('should include all employee fields', async () => {
       const employee = {
         name: 'Test Employee',
-        badge: 'TE001',
+        badge: createTestBadge('TE001', 'include-fields'),
         active: false
       };
 
@@ -206,7 +198,7 @@ describe('Employee CRUD Integration Tests', () => {
       expect(response.body[0]).toMatchObject({
         id: expect.any(String),
         name: 'Test Employee',
-        badge: 'TE001',
+        badge: expect.stringContaining('TE001'),
         active: false,
         created_at: expect.any(String)
       });
@@ -364,8 +356,9 @@ describe('Employee CRUD Integration Tests', () => {
 
   describe('Database constraints', () => {
     it('should enforce unique badge constraint', async () => {
-      const employee1 = { name: 'First', badge: 'UNIQUE' };
-      const employee2 = { name: 'Second', badge: 'UNIQUE' };
+      const uniqueBadge = createTestBadge('UNIQUE', 'constraint-test');
+      const employee1 = { name: 'First', badge: uniqueBadge };
+      const employee2 = { name: 'Second', badge: uniqueBadge };
 
       await request.post('/api/employees').send(employee1).expect(201);
       await request.post('/api/employees').send(employee2).expect(409);

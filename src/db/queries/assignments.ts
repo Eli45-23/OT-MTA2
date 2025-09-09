@@ -25,9 +25,10 @@ export async function getAssignmentByEmployeePeriod(employeeId: string, period: 
   return result[0] ? mapAssignmentRow(result[0]) : null;
 }
 
-export async function getOvertimeSummaryByPeriod(period: string): Promise<EmployeeSummary[]> {
+export async function getOvertimeSummaryByPeriod(period: string, tx?: any): Promise<EmployeeSummary[]> {
   const { start, end } = getPeriodBoundaries(period);
-  const result = await db.select({
+  const dbConnection = tx || db;
+  const result = await dbConnection.select({
     employee_id: employees.id,
     name: employees.name,
     badge: employees.badge,
@@ -46,7 +47,7 @@ export async function getOvertimeSummaryByPeriod(period: string): Promise<Employ
   .where(eq(employees.active, true))
   .groupBy(employees.id, employees.name, employees.badge);
 
-  return result.map(row => ({
+  return result.map((row: any) => ({
     employee_id: row.employee_id,
     name: row.name,
     badge: row.badge,
@@ -55,8 +56,8 @@ export async function getOvertimeSummaryByPeriod(period: string): Promise<Employ
   }));
 }
 
-export async function getCandidatesByPeriod(period: string): Promise<Candidate[]> {
-  const summaries = await getOvertimeSummaryByPeriod(period);
+export async function getCandidatesByPeriod(period: string, tx?: any): Promise<Candidate[]> {
+  const summaries = await getOvertimeSummaryByPeriod(period, tx);
   return summaries.map(summary => ({
     ...summary,
     tie_break_rank: 0

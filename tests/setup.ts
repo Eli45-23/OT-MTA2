@@ -1,6 +1,5 @@
 // Global test setup
 import 'dotenv/config';
-import { beforeEach } from '@jest/globals';
 
 // Set test environment
 process.env.NODE_ENV = 'test';
@@ -11,16 +10,13 @@ if (process.env.TEST_QUIET) {
   jest.spyOn(console, 'info').mockImplementation(() => {});
 }
 
-// Add database reset for integration and e2e tests
-beforeEach(async () => {
-  // Only run for integration/e2e tests, not unit tests
-  if (process.env.NODE_ENV === 'test' && (expect.getState().testPath?.includes('/integration/') || expect.getState().testPath?.includes('/e2e/'))) {
-    try {
-      const { db } = await import('../src/db/connection.js');
-      const { resetDb } = await import('../src/db/testReset.js');
-      await resetDb(db);
-    } catch (error) {
-      // Silently ignore if database is not available
-    }
+// Set up test database environment variables
+if (process.env.NODE_ENV === 'test') {
+  // Ensure TEST_DATABASE_URL is used for tests
+  if (process.env.TEST_DATABASE_URL) {
+    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
   }
-});
+}
+
+// Generate unique test run identifier to avoid cross-test contamination
+export const TEST_RUN_ID = Date.now().toString() + Math.random().toString(36).substr(2, 9);

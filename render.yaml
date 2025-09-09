@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: ot-mta2-web
+    runtime: node
+    plan: starter
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+    healthCheckPath: /health
+    autoDeploy: true
+    previewsEnabled: true
+
+  - type: pgsql
+    name: ot-mta2-db
+    databaseName: ot_mta2
+    user: ot_mta2_user
+    plan: starter
+
+envVarGroups:
+  - name: database
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ot-mta2-db
+          property: connectionString

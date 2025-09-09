@@ -31,12 +31,18 @@ router.get('/:id', validateParams(uuidParamSchema), async (req: Request, res: Re
 router.post('/', validateBody(createEmployeeSchema), async (req: Request, res: Response) => {
   try {
     const employee = await createEmployee(req.body);
+    if (!employee || !employee.id) {
+      return res.status(500).json({ error: 'Internal Server Error', message: 'Failed to create employee - invalid response' });
+    }
     res.status(201).json(employee);
   } catch (error: any) {
+    console.error('Employee creation error:', error);
     if (error.code === '23505') {
       res.status(409).json({ error: 'Conflict', message: 'Employee badge already exists' });
+    } else if (error.message && error.message.includes('missing required fields')) {
+      res.status(500).json({ error: 'Internal Server Error', message: 'Database returned invalid data' });
     } else {
-      res.status(500).json({ error: 'Internal Server Error', message: 'Failed to create employee' });
+      res.status(500).json({ error: 'Internal Server Error', message: 'Failed to create employee', details: error.message });
     }
   }
 });

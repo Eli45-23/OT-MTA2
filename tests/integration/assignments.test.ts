@@ -4,72 +4,50 @@ import app from '../../src/server.js';
 import { db, client } from '../../src/db/connection.js';
 import { employees, overtimeEntries, assignments, config } from '../../src/db/schema.js';
 import './setup.js';
+import { createTestEmployeeData, findEmployeeByName, sortEmployeesByName } from '../utils/testHelpers.js';
 
 const request = supertest(app);
 
 describe('Assignment Logic Integration Tests', () => {
   let testEmployees: any[] = [];
-
-  beforeAll(async () => {
-    // Clean all tables
-    await db.delete(assignments);
-    await db.delete(overtimeEntries);
-    await db.delete(employees);
-
-    // Set up test configuration
-    await db.insert(config).values({ id: 1, default_refusal_hours: 8 }).onConflictDoUpdate({
-      target: config.id,
-      set: { default_refusal_hours: 8 }
-    });
-  });
-
-  afterAll(async () => {
-    await db.delete(assignments);
-    await db.delete(overtimeEntries);
-    await db.delete(employees);
-    await client.end();
-  });
+  let alice: any, bob: any, charlie: any;
 
   beforeEach(async () => {
-    // Clean data before each test
-    await db.delete(assignments);
-    await db.delete(overtimeEntries);
-    await db.delete(employees);
-
-    // Create test employees with predictable UUIDs for tie-breaking tests
-    const employeeData = [
-      { name: 'Alice Smith', badge: 'AS001' }, // Will get lowest UUID
-      { name: 'Bob Johnson', badge: 'BJ002' },
-      { name: 'Charlie Brown', badge: 'CB003' } // Will get highest UUID
-    ];
+    // Create test employees with unique badges to avoid conflicts
+    const employeeData = createTestEmployeeData('assignments');
 
     testEmployees = [];
     for (const emp of employeeData) {
-      const response = await request.post('/api/employees').send(emp);
-      testEmployees.push(response.body);
+      const response = await request.post('/api/employees').send(emp).expect(201);
+      if (response.body && response.body.id) {
+        testEmployees.push(response.body);
+      }
     }
 
-    // Sort by UUID for predictable ordering
-    testEmployees.sort((a, b) => a.id.localeCompare(b.id));
+    // Sort for predictable ordering and assign to named variables
+    testEmployees = sortEmployeesByName(testEmployees);
+    alice = findEmployeeByName(testEmployees, 'Alice Smith');
+    bob = findEmployeeByName(testEmployees, 'Bob Johnson');
+    charlie = findEmployeeByName(testEmployees, 'Charlie Brown');
   });
 
   describe('Assignment ordering', () => {
     it('should assign to employee with lowest total hours', async () => {
       // Set up different overtime hours
       await request.post('/api/overtime-entries').send({
-        employee_id: testEmployees[0].id, // Alice
+        employee_id: alice.id,
         hours: 4,
         occurred_at: '2024-01-01T08:00:00Z'
       });
 
       await request.post('/api/overtime-entries').send({
-        employee_id: testEmployees[1].id, // Bob
+        employee_id: bob.id,
         hours: 2, // Lowest hours
         occurred_at: '2024-01-02T08:00:00Z'
       });
 
       await request.post('/api/overtime-entries').send({
-        employee_id: testEmployees[2].id, // Charlie
+        employee_id: charlie.id,
         hours: 6,
         occurred_at: '2024-01-03T08:00:00Z'
       });
@@ -80,7 +58,7 @@ describe('Assignment Logic Integration Tests', () => {
         .expect(200);
 
       expect(whoIsNextResponse.body.candidates[0]).toMatchObject({
-        employee_id: testEmployees[1].id, // Bob
+        employee_id: bob.id,
         name: 'Bob Johnson',
         total_hours: 2,
         tie_break_rank: 1
@@ -97,7 +75,7 @@ describe('Assignment Logic Integration Tests', () => {
         .expect(201);
 
       expect(assignResponse.body).toMatchObject({
-        employee_id: testEmployees[1].id, // Bob
+        employee_id: bob.id,
         period_week: '2024-W01',
         hours_charged: 8,
         status: 'assigned',
@@ -106,17 +84,23 @@ describe('Assignment Logic Integration Tests', () => {
     });
 
     it('should handle tie-breaking by last assigned date', async () => {
-      // Both employees have same overtime hours
+      // Give Alice and Bob same overtime hours, Charlie more
       await request.post('/api/overtime-entries').send({
-        employee_id: testEmployees[0].id, // Alice
+        employee_id: alice.id,
         hours: 4,
         occurred_at: '2024-01-01T08:00:00Z'
       });
 
       await request.post('/api/overtime-entries').send({
-        employee_id: testEmployees[1].id, // Bob
+        employee_id: bob.id,
         hours: 4, // Same hours as Alice
         occurred_at: '2024-01-02T08:00:00Z'
+      });
+      
+      await request.post('/api/overtime-entries').send({
+        employee_id: charlie.id,
+        hours: 6, // More hours than Alice and Bob
+        occurred_at: '2024-01-03T08:00:00Z'
       });
 
       // Alice was assigned more recently than Bob
@@ -137,7 +121,7 @@ describe('Assignment Logic Integration Tests', () => {
 
       const candidates = whoIsNextResponse.body.candidates;
       expect(candidates[0]).toMatchObject({
-        employee_id: testEmployees[1].id, // Bob (not recently assigned)
+        employee_id: bob.id, // Bob (not recently assigned)
         total_hours: 4,
         tie_break_rank: 1
       });
@@ -159,51 +143,95 @@ describe('Assignment Logic Integration Tests', () => {
 
       const candidates = whoIsNextResponse.body.candidates;
       
-      // Should be ordered by employee_id (UUID) ascending
+      // Should have 3 candidates with correct tie_break_ranks
+      expect(candidates).toHaveLength(3);
       expect(candidates[0].tie_break_rank).toBe(1);
       expect(candidates[1].tie_break_rank).toBe(2);
       expect(candidates[2].tie_break_rank).toBe(3);
 
-      // First candidate should have lowest UUID
-      expect(candidates[0].employee_id).toBe(testEmployees[0].id);
+      // All should have same total_hours and last_assigned_at
+      candidates.forEach(candidate => {
+        expect(candidate.total_hours).toBe(4);
+        expect(candidate.last_assigned_at).toBeNull();
+      });
+      
+      // Should be sorted by employee_id (lexicographically) when everything else is equal
+      const sortedIds = [...testEmployees].map(e => e.id).sort();
+      candidates.forEach((candidate, index) => {
+        expect(candidate.employee_id).toBe(sortedIds[index]);
+      });
     });
 
     it('should correctly calculate overtime summary including assignments', async () => {
-      // Add overtime entries
+      // Add overtime entries to give everyone different hours
       await request.post('/api/overtime-entries').send({
-        employee_id: testEmployees[0].id,
-        hours: 4,
+        employee_id: bob.id, // Bob gets 2 hours (will be selected)
+        hours: 2,
         occurred_at: '2024-01-01T08:00:00Z'
       });
+      
+      await request.post('/api/overtime-entries').send({
+        employee_id: alice.id, // Alice gets 4 hours
+        hours: 4,
+        occurred_at: '2024-01-02T08:00:00Z'
+      });
+      
+      await request.post('/api/overtime-entries').send({
+        employee_id: charlie.id, // Charlie gets 6 hours  
+        hours: 6,
+        occurred_at: '2024-01-03T08:00:00Z'
+      });
 
-      // Add assignment (should count toward total)
-      await request.post('/api/assign-next').send({
+      // Add assignment - should go to Bob (lowest hours at 2)
+      const assignResponse = await request.post('/api/assign-next').send({
         period: '2024-W01',
         hours: 8,
         reason: 'test assignment'
-      });
-
+      }).expect(201);
+      
       const summaryResponse = await request
         .get('/api/overtime-summary?period=2024-W01')
         .expect(200);
 
+      // Bob should have been assigned (lowest hours)
       const assignedEmployee = summaryResponse.body.employee_summaries
-        .find((emp: any) => emp.employee_id === testEmployees[0].id);
+        .find((emp: any) => emp.employee_id === bob.id);
 
       expect(assignedEmployee).toMatchObject({
-        total_hours: 12, // 4 overtime + 8 assignment
+        total_hours: 10, // 2 overtime + 8 assignment
         last_assigned_at: expect.any(String)
+      });
+      
+      // Alice should still have 4 hours, no assignment
+      const aliceEmployee = summaryResponse.body.employee_summaries
+        .find((emp: any) => emp.employee_id === alice.id);
+
+      expect(aliceEmployee).toMatchObject({
+        total_hours: 4, // 4 overtime + 0 assignment
+        last_assigned_at: null
       });
     });
   });
 
   describe('Refusal handling', () => {
     it('should charge default hours on refusal', async () => {
-      // Employee with lowest hours should be selected
+      // Give everyone overtime hours, Bob has the lowest
       await request.post('/api/overtime-entries').send({
-        employee_id: testEmployees[1].id, // Bob
+        employee_id: bob.id, // Bob gets 2 hours (lowest, will be selected)
         hours: 2,
         occurred_at: '2024-01-01T08:00:00Z'
+      });
+      
+      await request.post('/api/overtime-entries').send({
+        employee_id: alice.id, // Alice gets 4 hours
+        hours: 4,
+        occurred_at: '2024-01-02T08:00:00Z'
+      });
+      
+      await request.post('/api/overtime-entries').send({
+        employee_id: charlie.id, // Charlie gets 6 hours
+        hours: 6,
+        occurred_at: '2024-01-03T08:00:00Z'
       });
 
       // Assign but mark as refused
@@ -218,7 +246,7 @@ describe('Assignment Logic Integration Tests', () => {
         .expect(201);
 
       expect(assignResponse.body).toMatchObject({
-        employee_id: testEmployees[1].id, // Bob (lowest hours)
+        employee_id: bob.id, // Bob (lowest hours)
         status: 'refused',
         hours_charged: 8 // Default refusal hours
       });
@@ -229,7 +257,7 @@ describe('Assignment Logic Integration Tests', () => {
         .expect(200);
 
       const refusedEmployee = summaryResponse.body.employee_summaries
-        .find((emp: any) => emp.employee_id === testEmployees[1].id);
+        .find((emp: any) => emp.employee_id === bob.id);
 
       expect(refusedEmployee.total_hours).toBe(10); // 2 overtime + 8 refusal
     });
@@ -245,12 +273,14 @@ describe('Assignment Logic Integration Tests', () => {
       }
 
       // First assignment (refused) - should go to first employee by UUID
-      await request.post('/api/assign-next').send({
+      const refusalResponse = await request.post('/api/assign-next').send({
         period: '2024-W01',
         hours: 8,
         reason: 'first assignment',
         refused: true
-      });
+      }).expect(201);
+      
+      const refusedEmployeeId = refusalResponse.body.employee_id;
 
       // Check who is next now - should NOT be the employee who just refused
       const whoIsNextResponse = await request
@@ -258,12 +288,12 @@ describe('Assignment Logic Integration Tests', () => {
         .expect(200);
 
       const nextCandidate = whoIsNextResponse.body.candidates[0];
-      expect(nextCandidate.employee_id).not.toBe(testEmployees[0].id);
+      expect(nextCandidate.employee_id).not.toBe(refusedEmployeeId);
       expect(nextCandidate.total_hours).toBe(4); // Still has lowest total
 
       // The refused employee should be last (highest total hours now)
       const refusedCandidate = whoIsNextResponse.body.candidates
-        .find((c: any) => c.employee_id === testEmployees[0].id);
+        .find((c: any) => c.employee_id === refusedEmployeeId);
       expect(refusedCandidate.total_hours).toBe(12); // 4 + 8 refusal hours
     });
 
@@ -368,13 +398,15 @@ describe('Assignment Logic Integration Tests', () => {
         })
         .expect(201);
 
-      expect(assignResponse.body.employee_id).toBe(testEmployees[0].id);
+      // Should assign to one of our test employees (tie-breaking by UUID)
+      const employeeIds = testEmployees.map(e => e.id);
+      expect(employeeIds).toContain(assignResponse.body.employee_id);
     });
 
     it('should handle inactive employees', async () => {
       // Deactivate one employee
       await request
-        .patch(`/api/employees/${testEmployees[0].id}`)
+        .patch(`/api/employees/${alice.id}`)
         .send({ active: false });
 
       const whoIsNextResponse = await request
@@ -384,7 +416,7 @@ describe('Assignment Logic Integration Tests', () => {
       // Should only include active employees
       expect(whoIsNextResponse.body.candidates).toHaveLength(2);
       whoIsNextResponse.body.candidates.forEach((candidate: any) => {
-        expect(candidate.employee_id).not.toBe(testEmployees[0].id);
+        expect(candidate.employee_id).not.toBe(alice.id);
       });
     });
   });

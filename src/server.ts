@@ -19,6 +19,15 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health and version endpoints
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
+app.get('/version', (req, res) => {
+  res.json({ version: process.env.npm_package_version || '1.0.0' });
+});
+
 // Routes
 app.use('/api', routes);
 

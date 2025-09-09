@@ -54,13 +54,16 @@ describe('Complete E2E Workflow Tests', () => {
 
       // Sort by employee ID for consistent ordering
       employees.sort((a, b) => a.id.localeCompare(b.id));
+      const alice = employees.find(e => e.name === 'Alice Smith');
+      const bob = employees.find(e => e.name === 'Bob Johnson');
+      const charlie = employees.find(e => e.name === 'Charlie Brown');
 
       // 2. Add overtime entries with different hours
       // Alice: 2 hours, Bob: 4 hours, Charlie: 2 hours  
       await request
         .post('/api/overtime-entries')
         .send({
-          employee_id: employees[0].id, // Alice
+          employee_id: alice.id, // Alice
           hours: 2,
           occurred_at: '2024-01-01T08:00:00Z'
         })
@@ -69,7 +72,7 @@ describe('Complete E2E Workflow Tests', () => {
       await request
         .post('/api/overtime-entries')
         .send({
-          employee_id: employees[1].id, // Bob  
+          employee_id: bob.id, // Bob  
           hours: 4,
           occurred_at: '2024-01-02T08:00:00Z'
         })
@@ -78,7 +81,7 @@ describe('Complete E2E Workflow Tests', () => {
       await request
         .post('/api/overtime-entries')
         .send({
-          employee_id: employees[2].id, // Charlie
+          employee_id: charlie.id, // Charlie
           hours: 2, 
           occurred_at: '2024-01-03T08:00:00Z'
         })
@@ -93,19 +96,19 @@ describe('Complete E2E Workflow Tests', () => {
         period_week: '2024-W01',
         employee_summaries: expect.arrayContaining([
           expect.objectContaining({
-            employee_id: employees[0].id,
+            employee_id: alice.id,
             name: 'Alice Smith',
             total_hours: 2,
             last_assigned_at: null
           }),
           expect.objectContaining({
-            employee_id: employees[1].id, 
+            employee_id: bob.id, 
             name: 'Bob Johnson',
             total_hours: 4,
             last_assigned_at: null
           }),
           expect.objectContaining({
-            employee_id: employees[2].id,
+            employee_id: charlie.id,
             name: 'Charlie Brown', 
             total_hours: 2,
             last_assigned_at: null
@@ -126,7 +129,7 @@ describe('Complete E2E Workflow Tests', () => {
       expect(candidates[0].total_hours).toBe(2); // Lowest hours first
       expect(candidates[1].total_hours).toBe(2);
       expect(candidates[2].total_hours).toBe(4); // Highest hours last
-      expect(candidates[2].employee_id).toBe(employees[1].id); // Bob
+      expect(candidates[2].employee_id).toBe(bob.id); // Bob
 
       // 5. Call /assign-next to assign to first candidate
       const firstAssignResponse = await request

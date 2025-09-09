@@ -1,41 +1,20 @@
-version: '3.8'
-
 services:
-  postgres:
+  db:
     image: postgres:15
-    container_name: overtime-tracker-db
+    container_name: ot_mta2_db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: overtime_user
-      POSTGRES_PASSWORD: overtime_pass
-      POSTGRES_DB: overtime_tracker
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     ports:
-      - '5432:5432'
+      - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d
+      - pgdata-ot-mta2:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U overtime_user -d overtime_tracker']
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
       timeout: 5s
-      retries: 5
-
-  postgres-test:
-    image: postgres:15
-    container_name: overtime-tracker-test-db
-    environment:
-      POSTGRES_USER: overtime_test
-      POSTGRES_PASSWORD: overtime_test_pass
-      POSTGRES_DB: overtime_tracker_test
-    ports:
-      - '5433:5432'
-    volumes:
-      - postgres_test_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U overtime_test -d overtime_tracker_test']
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      retries: 10
 
 volumes:
-  postgres_data:
-  postgres_test_data:
+  pgdata-ot-mta2:
