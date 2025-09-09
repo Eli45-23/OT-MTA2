@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql } from 'drizzle-orm';
 import { periodQuerySchema, assignNextSchema } from '../../contracts/schemas.js';
 import { validateQuery, validateBody } from '../lib/validation.js';
 import { orderCandidates, getNextEmployee } from '../lib/selection.js';
@@ -8,7 +8,8 @@ import { isValidPeriodWeek } from '../lib/period.js';
 import { createAssignment, getAssignmentByEmployeePeriod } from '../db/queries/assignments.js';
 import { mapAssignmentRow } from '../db/mappers.js';
 import { db } from '../db/connection.js';
-import { config, assignments } from '../db/schema.js';
+import { config as dbConfig, assignments } from '../db/schema.js';
+import { config } from '../config.js';
 
 const router = Router();
 
@@ -35,8 +36,9 @@ router.get('/who-is-next', validateQuery(periodQuerySchema), async (req: Request
 });
 
 router.post('/assign-next', validateBody(assignNextSchema), async (req: Request, res: Response) => {
+  const { period, hours, reason, refused = false } = req.body;
+  
   try {
-    const { period, hours, reason, refused = false } = req.body;
     
     // Additional period validation beyond regex
     if (!isValidPeriodWeek(period)) {
@@ -46,8 +48,12 @@ router.post('/assign-next', validateBody(assignNextSchema), async (req: Request,
       });
     }
 
-    // Use transaction for atomicity and race condition prevention
+    // Use transaction with advisory locking for stronger race condition prevention
     const result = await db.transaction(async (tx) => {
+      // Use advisory lock for the period to prevent concurrent assignments
+      const lockId = period.split('-').map(p => p.charCodeAt(0)).reduce((a, b) => a + b, 0);
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${lockId})`);
+      
       // Get candidates atomically within transaction
       const candidates = await orderCandidates(period, tx);
       if (candidates.length === 0) {
@@ -56,23 +62,32 @@ router.post('/assign-next', validateBody(assignNextSchema), async (req: Request,
 
       const nextEmployee = candidates[0];
 
-      // Check for existing assignment with SELECT FOR UPDATE to prevent races
-      const existing = await tx.select()
+      // Check for ANY existing assignment for this period (prevent multiple assignments per period)
+      const existingForPeriod = await tx.select()
+        .from(assignments)
+        .where(eq(assignments.period_week, period))
+        .limit(1);
+
+      if (existingForPeriod.length > 0) {
+        throw new Error('ALREADY_ASSIGNED');
+      }
+
+      // Also check specifically for this employee (redundant but defensive)
+      const existingForEmployee = await tx.select()
         .from(assignments)
         .where(and(
           eq(assignments.employee_id, nextEmployee.employee_id),
           eq(assignments.period_week, period)
-        ))
-        .for('update');
+        ));
 
-      if (existing.length > 0) {
+      if (existingForEmployee.length > 0) {
         throw new Error('ALREADY_ASSIGNED');
       }
 
       // Get default refusal hours if needed
       let hoursToCharge = hours;
       if (refused) {
-        const configResult = await tx.select().from(config);
+        const configResult = await tx.select().from(dbConfig);
         hoursToCharge = Number(configResult[0]?.default_refusal_hours || 8);
       }
 
@@ -96,7 +111,21 @@ router.post('/assign-next', validateBody(assignNextSchema), async (req: Request,
     res.status(201).json(result);
 
   } catch (error: any) {
-    console.error('Assignment error:', error);
+    // Enhanced logging for debugging concurrent assignment issues
+    const errorContext = {
+      period,
+      hours,
+      refused,
+      timestamp: new Date().toISOString(),
+      errorType: error.constructor.name,
+      errorCode: error.code,
+      errorMessage: error.message
+    };
+    
+    // Only log to console in test environment, not in production
+    if (config.isTest()) {
+      console.error('Assignment error:', errorContext);
+    }
     
     // Handle specific transaction errors
     if (error.message === 'NO_CANDIDATES') {
@@ -105,31 +134,49 @@ router.post('/assign-next', validateBody(assignNextSchema), async (req: Request,
         message: 'No eligible employees available' 
       });
     }
+    
     if (error.message === 'ALREADY_ASSIGNED') {
       return res.status(409).json({ 
         error: 'Conflict', 
         message: 'Employee already assigned for this period' 
       });
     }
+    
     if (error.message === 'ASSIGNMENT_CREATION_FAILED') {
       return res.status(500).json({ 
         error: 'Internal Server Error', 
         message: 'Failed to create assignment record' 
       });
     }
+    
     // Handle database constraint violations
     if (error.code === '23505') {
+      // Parse constraint details for better error messages
+      const isAssignmentConstraint = error.constraint_name?.includes('assignments_employee_period_unique') || 
+                                    error.detail?.includes('employee_id, period_week');
+                                    
       return res.status(409).json({ 
         error: 'Conflict', 
-        message: 'Employee already assigned for this period' 
-      });
-    } else {
-      return res.status(500).json({ 
-        error: 'Internal Server Error', 
-        message: 'Failed to create assignment',
-        details: error.message
+        message: isAssignmentConstraint 
+          ? 'Assignment already exists for this period' 
+          : 'Database constraint violation'
       });
     }
+    
+    // Handle connection/timeout errors
+    if (error.code === '57P01' || error.message?.includes('timeout') || error.message?.includes('connection')) {
+      return res.status(503).json({ 
+        error: 'Service Temporarily Unavailable', 
+        message: 'Database connection issue, please retry' 
+      });
+    }
+    
+    // Generic error handler
+    return res.status(500).json({ 
+      error: 'Internal Server Error', 
+      message: 'Failed to create assignment',
+      ...(config.isTest() && { details: error.message }) // Include details only in test environment
+    });
   }
 });
 

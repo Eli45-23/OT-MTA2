@@ -28,32 +28,43 @@ export async function getAssignmentByEmployeePeriod(employeeId: string, period: 
 export async function getOvertimeSummaryByPeriod(period: string, tx?: any): Promise<EmployeeSummary[]> {
   const { start, end } = getPeriodBoundaries(period);
   const dbConnection = tx || db;
-  const result = await dbConnection.select({
-    employee_id: employees.id,
-    name: employees.name,
-    badge: employees.badge,
-    overtime_hours: sql<string>`COALESCE(SUM(${overtimeEntries.hours}), 0)`,
-    assignment_hours: sql<string>`COALESCE(SUM(${assignments.hours_charged}), 0)`,
-    last_assigned_at: sql<Date | null>`MAX(${assignments.created_at})`
-  }).from(employees)
-  .leftJoin(overtimeEntries, and(
-    eq(overtimeEntries.employee_id, employees.id),
-    sql`${overtimeEntries.occurred_at} >= ${start} AND ${overtimeEntries.occurred_at} <= ${end}`
-  ))
-  .leftJoin(assignments, and(
-    eq(assignments.employee_id, employees.id),
-    eq(assignments.period_week, period)
-  ))
-  .where(eq(employees.active, true))
-  .groupBy(employees.id, employees.name, employees.badge);
+  
+  try {
+    // Improved query with deterministic ordering and better error handling
+    const result = await dbConnection.select({
+      employee_id: employees.id,
+      name: employees.name,
+      badge: employees.badge,
+      overtime_hours: sql<string>`COALESCE(SUM(DISTINCT ${overtimeEntries.hours}), 0)`,
+      assignment_hours: sql<string>`COALESCE(SUM(CASE WHEN ${assignments.period_week} = ${period} THEN ${assignments.hours_charged}::numeric ELSE 0 END), 0)`,
+      last_assigned_at: sql<Date | null>`MAX(${assignments.created_at})`
+    }).from(employees)
+    .leftJoin(overtimeEntries, and(
+      eq(overtimeEntries.employee_id, employees.id),
+      sql`${overtimeEntries.occurred_at} >= ${start} AND ${overtimeEntries.occurred_at} <= ${end}`
+    ))
+    .leftJoin(assignments, eq(assignments.employee_id, employees.id))
+    .where(eq(employees.active, true))
+    .groupBy(employees.id, employees.name, employees.badge)
+    .orderBy(employees.id); // Ensure deterministic ordering for concurrent requests
 
-  return result.map((row: any) => ({
-    employee_id: row.employee_id,
-    name: row.name,
-    badge: row.badge,
-    total_hours: Number(row.overtime_hours) + Number(row.assignment_hours),
-    last_assigned_at: row.last_assigned_at?.toISOString() || null
-  }));
+    // Add debugging for empty results
+    if (result.length === 0) {
+      console.warn(`No employees found for period ${period}. This might indicate a database reset issue.`);
+    }
+
+    return result.map((row: any) => ({
+      employee_id: row.employee_id,
+      name: row.name,
+      badge: row.badge,
+      total_hours: Number(row.overtime_hours) + Number(row.assignment_hours),
+      last_assigned_at: row.last_assigned_at?.toISOString() || null
+    }));
+    
+  } catch (error: any) {
+    console.error(`Error in getOvertimeSummaryByPeriod for period ${period}:`, error);
+    throw error;
+  }
 }
 
 export async function getCandidatesByPeriod(period: string, tx?: any): Promise<Candidate[]> {
