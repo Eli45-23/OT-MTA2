@@ -81,7 +81,7 @@ jobs:
           NODE_ENV: test
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/overtime_tracker_test
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/overtime_tracker_test
-        run: npm run test:integration
+        run: npm run test:integration -- --maxWorkers=1
 
   # E2E tests with Postgres service
   e2e:

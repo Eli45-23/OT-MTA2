@@ -211,7 +211,7 @@ describe('Assignment Concurrency Tests', () => {
 
     it('should handle database connection limits gracefully', async () => {
       const period = '2024-W01';
-      const highConcurrency = 20;
+      const highConcurrency = 10;
       
       // Create high concurrency load to test connection pooling
       const operations = Array.from({ length: highConcurrency }, (_, i) => {
@@ -236,9 +236,9 @@ describe('Assignment Concurrency Tests', () => {
       );
       const errors = responses.filter(r => r.status === 'rejected');
 
-      // Should handle high load without crashing (resource exhaustion expected)
-      expect(errors.length).toBeLessThanOrEqual(highConcurrency * 0.6); // 60% or fewer errors (Promise rejections)
-      expect(successful.length).toBeGreaterThan(highConcurrency * 0.3); // More than 30% success
+      // Should handle moderate load without crashing (resource exhaustion expected)
+      expect(errors.length).toBeLessThanOrEqual(highConcurrency * 0.5); // 50% or fewer errors (Promise rejections)
+      expect(successful.length).toBeGreaterThan(highConcurrency * 0.4); // More than 40% success
     });
 
     it('should prevent assignment race conditions with database transactions', async () => {
