@@ -33,7 +33,13 @@ export function getPeriodBoundaries(periodWeek: string): { start: Date; end: Dat
   const endET = new Date(targetSunday.getFullYear(), targetSunday.getMonth(), targetSunday.getDate() + 6, 23, 59, 59, 999);
   
   const startUTC = zonedTimeToUtc(startET, TIMEZONE);
-  const endUTC = zonedTimeToUtc(endET, TIMEZONE);
+  let endUTC = zonedTimeToUtc(endET, TIMEZONE);
+  
+  // If timezone conversion pushed end date to next day (Sunday), adjust by going back to Saturday 23:59:59 UTC
+  if (endUTC.getDay() === 0) { // Sunday
+    endUTC = new Date(endUTC.getTime() - 24 * 60 * 60 * 1000); // Go back 1 day
+    endUTC.setUTCHours(23, 59, 59, 999); // Set to end of Saturday UTC
+  }
   
   return {
     start: startUTC,
